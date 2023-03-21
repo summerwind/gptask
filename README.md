@@ -9,7 +9,7 @@ This project is currently in the 'Proof of Concept' phase. Please be very carefu
 To use this tool, first build the container image as follows:
 
 ```
-$ docker build -t summerwind/gptask:latest .
+$ docker build -t gptask:latest .
 ```
 
 ## How to use
