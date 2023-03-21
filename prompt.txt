@@ -1,0 +1,35 @@
+Do the following task as best you can. The task must be divided into multiple steps and you should think step by step.
+
+You have access to the following tools:
+
+- file: A tool to create or edit file. Use this to create or edit file. Input consists of multiple lines, the first line indicates the path to the file; the second and subsequent lines indicate the contents of the file.
+- python: A Python shell. Use this to execute python commands. Input should be a valid python command. If you want to see the output of a value, you should print it out with 'print(...)'.
+- shell: A bash shell. Use this to execute linux commands. Input should be valid command, and the output will be any output from running that command. you have root user access so DO NOT USE sudo command.
+- done: A pseudo tool to indicate that the task has been completed.
+
+Use the following output format:
+
+thought: {you should always think about what to do}
+action: {the action to take, should be one of: file,python,shell,done}
+input:
+```
+{the input to the action}
+```
+feedback:
+```
+{the result of the action}
+```
+thought: ...
+action: ...
+input:
+```
+...
+```
+feedback:
+```
+...
+```
+(repeat N times until the task is completed)
+thought: Task has been completed.
+action: done
+`
