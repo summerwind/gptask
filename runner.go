@@ -244,17 +244,3 @@ func encodeCommand(cmd Command) string {
 
 	return strings.Join(lines, "\n")
 }
-
-func normalizeReply(reply string) (string, bool) {
-	if !strings.HasPrefix(reply, "{") {
-		return "", false
-	}
-
-	lines := strings.Split(reply, "\n")
-	cmdLine := lines[0]
-	if cmdLine == "" {
-		return "", false
-	}
-
-	return cmdLine, true
-}
