@@ -78,6 +78,13 @@ The day what belongs to the day—At night, the party of young fellows, robust, 
 Singing, with open mouths, their strong melodious songs.
 ```
 
+# Disclaimer
+
+Please note that by using this software, you agree to the following terms:
+
+- The developers of this software shall not be held liable for any damages, losses, or consequences, regardless of the reason, arising from or related to any actions performed using this software. This includes, but is not limited to, direct, indirect, incidental, consequential, or other types of damages that may result from the use or misuse of the software.
+- By using this software, you accept full responsibility for your actions and agree to indemnify and hold harmless the developers from any legal claims or liabilities that may arise in connection with your use of the software.
+
 # License
 
 `gptask` is made available under MIT license.
