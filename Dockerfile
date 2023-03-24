@@ -13,7 +13,7 @@ RUN go build -v -o /usr/local/bin/gptask .
 FROM ubuntu:22.04
 
 RUN apt update \
-  && apt install -y --no-install-recommends tzdata curl jq zip sudo python3 python3-pip awscli \
+  && apt install -y --no-install-recommends tzdata psmisc curl jq zip sudo python3 python3-pip golang awscli \
   && echo 'APT::Get::Assume-Yes "true";' > /etc/apt/apt.conf.d/90yes \
   && mkdir /opt/gptask
 
