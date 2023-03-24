@@ -69,14 +69,21 @@ func (r *Runner) Run(task string) error {
 		}
 
 		reply := res.Choices[0].Message.Content
+		if reply == "" {
+			messages = append(messages, openai.ChatCompletionMessage{
+				Role:    "user",
+				Content: "try again.",
+			})
+			continue
+		}
+
 		cmd, err := decodeCommand(reply)
 		if err != nil {
 			return err
 		}
 
 		if cmd.Thought == "" {
-			done = true
-			break
+			continue
 		}
 
 		fmt.Printf("Step %d: %s\n", i+1, cmd.Thought)
@@ -94,7 +101,6 @@ func (r *Runner) Run(task string) error {
 		if err != nil {
 			return fmt.Errorf("failed to run command: %v", err)
 		}
-
 		fmt.Printf("%s\n\n", feedback)
 
 		messages = append(messages, []openai.ChatCompletionMessage{
@@ -177,6 +183,20 @@ func (r *Runner) runShellCommand(cmd Command) (string, error) {
 			}
 			return "", err
 		}
+	}
+
+	err = os.WriteFile("output.log", output, 0644)
+	if err != nil {
+		return "", err
+	}
+
+	if len(output) == 0 {
+		return "success", nil
+	}
+
+	if len(output) > 100 {
+		lines = strings.Split(string(output), "\n")
+		return strings.Join(lines[len(lines)-5:], "\n"), nil
 	}
 
 	return string(output), nil
