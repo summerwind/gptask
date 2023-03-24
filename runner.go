@@ -135,7 +135,10 @@ func (r *Runner) runFileCommand(cmd Command) (string, error) {
 		return "file path and content must be specified to create a file", nil
 	}
 
-	targetPath := filepath.Join(r.Config.WorkDir, lines[0])
+	targetPath := lines[0]
+	if !filepath.IsAbs(targetPath) {
+		targetPath = filepath.Join(r.Config.WorkDir, lines[0])
+	}
 
 	err := os.WriteFile(targetPath, []byte(lines[1]), 0644)
 	if err != nil {
@@ -168,21 +171,16 @@ func (r *Runner) runShellCommand(cmd Command) (string, error) {
 		err    error
 	)
 
-	lines := strings.Split(cmd.Input, "\n")
+	shell := exec.Command("bash", "-e", "-o", "pipefail", "-c", cmd.Input)
+	shell.Dir = r.Config.WorkDir
 
-	for _, line := range lines {
-		shell := exec.Command("bash", "-c", line)
-		shell.Dir = r.Config.WorkDir
-
-		output, err = shell.CombinedOutput()
-		if err != nil {
-			var exitErr *exec.ExitError
-			if errors.As(err, &exitErr) {
-				return string(output), nil
-
-			}
-			return "", err
+	output, err = shell.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return string(exitErr.Stderr), nil
 		}
+		return "", err
 	}
 
 	err = os.WriteFile("output.log", output, 0644)
@@ -194,8 +192,8 @@ func (r *Runner) runShellCommand(cmd Command) (string, error) {
 		return "success", nil
 	}
 
-	if len(output) > 100 {
-		lines = strings.Split(string(output), "\n")
+	lines := strings.Split(string(output), "\n")
+	if len(lines) > 5 {
 		return strings.Join(lines[len(lines)-5:], "\n"), nil
 	}
 
