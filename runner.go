@@ -16,7 +16,10 @@ import (
 //go:embed prompt.txt
 var systemContent string
 
-var errInvalidFormat = errors.New("invalid format")
+var (
+	errInvalidFormat = errors.New("invalid format")
+	errInvalidAction = errors.New("invalid action")
+)
 
 type Config struct {
 	APIKey   string
@@ -99,6 +102,10 @@ func (r *Runner) Run(task string) error {
 
 		feedback, err := r.runCommand(cmd)
 		if err != nil {
+			if errors.Is(err, errInvalidAction) {
+				fmt.Printf("retry: %v\n", err.Error())
+				continue
+			}
 			return fmt.Errorf("failed to run command: %v", err)
 		}
 		feedback = strings.Trim(feedback, "\n")
@@ -126,7 +133,7 @@ func (r *Runner) runCommand(cmd Command) (string, error) {
 	case "shell":
 		return r.runShellCommand(cmd)
 	default:
-		return "", fmt.Errorf("invalid action: %s", cmd.Action)
+		return "", errInvalidAction
 	}
 }
 
@@ -136,7 +143,7 @@ func (r *Runner) runFileCommand(cmd Command) (string, error) {
 		return "file path and content must be specified to create a file", nil
 	}
 	if len(lines) == 1 {
-		return "file content must be specified to create a file", nil
+		lines = append(lines, "")
 	}
 
 	targetPath := lines[0]
