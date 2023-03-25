@@ -164,12 +164,21 @@ func (r *Runner) runFileCommand(cmd Command) (string, error) {
 		lines = append(lines, "")
 	}
 
-	targetPath := lines[0]
-	if !filepath.IsAbs(targetPath) {
-		targetPath = filepath.Join(r.getWorkDir(), lines[0])
+	filePath := lines[0]
+	if !filepath.IsAbs(filePath) {
+		return "file path must be absolute path.", nil
+	}
+	if !strings.HasPrefix(filePath, r.Config.WorkDir) {
+		return "unauthorized file path.", nil
 	}
 
-	err := os.WriteFile(targetPath, []byte(lines[1]), 0644)
+	dirPath := filepath.Dir(filePath)
+	err := os.MkdirAll(dirPath, 0755)
+	if err != nil {
+		return err.Error(), nil
+	}
+
+	err = os.WriteFile(filePath, []byte(lines[1]), 0644)
 	if err != nil {
 		return err.Error(), nil
 	}
