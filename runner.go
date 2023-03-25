@@ -101,6 +101,7 @@ func (r *Runner) Run(task string) error {
 		if err != nil {
 			return fmt.Errorf("failed to run command: %v", err)
 		}
+		feedback = strings.Trim(feedback, "\n")
 		fmt.Printf("%s\n\n", feedback)
 
 		messages = append(messages, []openai.ChatCompletionMessage{
@@ -131,8 +132,11 @@ func (r *Runner) runCommand(cmd Command) (string, error) {
 
 func (r *Runner) runFileCommand(cmd Command) (string, error) {
 	lines := strings.SplitN(cmd.Input, "\n", 2)
-	if len(lines) < 2 {
+	if len(lines) == 0 {
 		return "file path and content must be specified to create a file", nil
+	}
+	if len(lines) == 1 {
+		return "file content must be specified to create a file", nil
 	}
 
 	targetPath := lines[0]
@@ -223,7 +227,7 @@ func decodeCommand(reply string) (Command, error) {
 			input := []string{}
 
 			start := false
-			for i < len(lines) {
+			for i < len(lines)-1 {
 				if strings.HasPrefix(lines[i+1], "```") {
 					if start {
 						break
