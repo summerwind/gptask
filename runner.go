@@ -44,8 +44,9 @@ type Command struct {
 }
 
 type Runner struct {
-	Config *Config
-	Client *openai.Client
+	Config  *Config
+	Client  *openai.Client
+	WorkDir string
 }
 
 func NewRunner(c *Config) *Runner {
@@ -147,6 +148,8 @@ func (r *Runner) runCommand(cmd Command) (string, error) {
 		return r.runPythonCommand(cmd)
 	case "shell":
 		return r.runShellCommand(cmd)
+	case "workdir":
+		return r.runWorkDirCommand(cmd)
 	default:
 		return "", errInvalidAction
 	}
@@ -163,7 +166,7 @@ func (r *Runner) runFileCommand(cmd Command) (string, error) {
 
 	targetPath := lines[0]
 	if !filepath.IsAbs(targetPath) {
-		targetPath = filepath.Join(r.Config.WorkDir, lines[0])
+		targetPath = filepath.Join(r.getWorkDir(), lines[0])
 	}
 
 	err := os.WriteFile(targetPath, []byte(lines[1]), 0644)
@@ -176,7 +179,7 @@ func (r *Runner) runFileCommand(cmd Command) (string, error) {
 
 func (r *Runner) runPythonCommand(cmd Command) (string, error) {
 	python := exec.Command("python3", "-c", cmd.Input)
-	python.Dir = r.Config.WorkDir
+	python.Dir = r.getWorkDir()
 
 	output, err := python.CombinedOutput()
 	if err != nil {
@@ -198,7 +201,7 @@ func (r *Runner) runShellCommand(cmd Command) (string, error) {
 	)
 
 	shell := exec.Command("bash", "-e", "-o", "pipefail", "-c", cmd.Input)
-	shell.Dir = r.Config.WorkDir
+	shell.Dir = r.getWorkDir()
 
 	output, err = shell.Output()
 	if err != nil {
@@ -221,11 +224,32 @@ func (r *Runner) runShellCommand(cmd Command) (string, error) {
 	lines := strings.Split(string(output), "\n")
 	if len(lines) > 5 {
 		lines = lines[len(lines)-5:]
-		lines.append(["...(snip)..."], lines...)
 		return strings.Join(lines, "\n"), nil
 	}
 
 	return string(output), nil
+}
+
+func (r *Runner) runWorkDirCommand(cmd Command) (string, error) {
+	workDir := filepath.Clean(cmd.Input)
+	if !filepath.IsAbs(workDir) {
+		workDir = filepath.Join(r.Config.WorkDir, workDir)
+	}
+
+	if !strings.HasPrefix(workDir, r.Config.WorkDir) {
+		return "unauthorized path.", nil
+	}
+
+	r.WorkDir = workDir
+
+	return FeedbackSuccess, nil
+}
+
+func (r *Runner) getWorkDir() string {
+	if r.WorkDir == "" {
+		return r.Config.WorkDir
+	}
+	return r.WorkDir
 }
 
 func (r *Runner) vlog(format string, v ...any) {

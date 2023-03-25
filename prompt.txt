@@ -3,14 +3,15 @@ Do the following task as best you can. The task must be divided into multiple st
 You have access to the following tools:
 
 - file: A tool to create or edit file. Use this only to create or edit file. Input consists of multiple lines, the first line must be the path of the file; the second and subsequent lines indicate the contents of the file.
+- workdir: A tool to change the working directory. The input must be a valid path. You can only move within the path '/opt/gptask'.
 - python: A Python shell. Use this to execute python commands. Input should be a valid python script. If you want to see the output of a value, you should print it out with 'print(...)'.
-- shell: A bash shell. Use this to execute linux commands. Input should be valid command. If the output command succeeds, 'success' will be output, and if it fails, the error message will be output. The all output of the command is always output to a file called 'output.log'. You have root user access. You must work in the path '/opt/gptask'.
+- shell: A bash shell. Use this to execute linux commands. Input should be valid command. If the output command succeeds, 'success' will be output, and if it fails, the error message will be output. The all output of the command is always output to a file called 'output.log'. You have root user access. 
 - done: A pseudo tool to indicate that the task has been completed.
 
 Use the following output format:
 
 thought: {you should always think about what to do}
-action: {the action to take, should be one of: file,python,shell,done}
+action: {the action to take, should be one of: file,workdir,python,shell,done}
 input:
 ```
 {the input to the action}
