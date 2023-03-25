@@ -13,11 +13,28 @@ RUN go build -v -o /usr/local/bin/gptask .
 FROM ubuntu:22.04
 
 RUN apt update \
-  && apt install -y --no-install-recommends tzdata psmisc curl jq zip sudo python3 python3-pip golang awscli \
+  && apt install -y --no-install-recommends \
+    software-properties-common \
+    sudo \
+    tzdata \
+    psmisc \
+    curl \
+    jq \
+    zip \
+    golang \
+    awscli \
   && echo 'APT::Get::Assume-Yes "true";' > /etc/apt/apt.conf.d/90yes \
   && mkdir /opt/gptask
 
-RUN pip3 install requests boto3
+RUN apt install python3 python3-pip \
+  && pip3 install requests boto3
+
+RUN add-apt-repository ppa:longsleep/golang-backports \
+  && apt update \
+  && apt install golang-go
+
+RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - \
+  && apt-get install -y nodejs
 
 COPY --from=build /usr/local/bin/gptask /usr/local/bin/gptask
 
