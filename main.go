@@ -30,6 +30,7 @@ func main() {
 	pflag.StringVarP(&c.Model, "model", "m", "gpt-3.5-turbo-0301", "Name of the GPT model to use")
 	pflag.StringVarP(&c.WorkDir, "workdir", "w", "/opt/gptask", "Working directory")
 	pflag.IntVar(&c.MaxSteps, "max-steps", 10, "Maximum number of steps the task is allowed to take")
+	pflag.BoolVar(&c.Verbose, "verbose", false, "Output verbose log")
 
 	cmd.PersistentFlags().Bool("help", false, "Display this help and exit")
 	cmd.SetVersionTemplate("{{.Version}}\n")

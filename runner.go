@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,11 +22,17 @@ var (
 	errInvalidAction = errors.New("invalid action")
 )
 
+const (
+	FeedbackSuccess  = "Success"
+	FeedbackContinue = "Continue"
+)
+
 type Config struct {
 	APIKey   string
 	Model    string
 	WorkDir  string
 	MaxSteps int
+	Verbose  bool
 }
 
 type Command struct {
@@ -50,6 +57,7 @@ func NewRunner(c *Config) *Runner {
 
 func (r *Runner) Run(task string) error {
 	var done bool
+	var numStep int = 1
 
 	ctx := context.Background()
 
@@ -58,7 +66,7 @@ func (r *Runner) Run(task string) error {
 		{Role: "user", Content: task},
 	}
 
-	for i := 0; i < r.Config.MaxSteps; i++ {
+	for {
 		req := openai.ChatCompletionRequest{
 			Model:       r.Config.Model,
 			Temperature: 0.0,
@@ -73,9 +81,10 @@ func (r *Runner) Run(task string) error {
 
 		reply := res.Choices[0].Message.Content
 		if reply == "" {
+			r.vlog("empty reply. continue.")
 			messages = append(messages, openai.ChatCompletionMessage{
 				Role:    "user",
-				Content: "try again.",
+				Content: FeedbackContinue,
 			})
 			continue
 		}
@@ -86,10 +95,11 @@ func (r *Runner) Run(task string) error {
 		}
 
 		if cmd.Thought == "" {
+			r.vlog("no thought found. raw reply:\n%s", reply)
 			continue
 		}
 
-		fmt.Printf("Step %d: %s\n", i+1, cmd.Thought)
+		fmt.Printf("Step %d: %s\n", numStep, cmd.Thought)
 		fmt.Printf("Action: %s\n", cmd.Action)
 		if cmd.Input != "" {
 			fmt.Printf("%s\n", cmd.Input)
@@ -103,7 +113,7 @@ func (r *Runner) Run(task string) error {
 		feedback, err := r.runCommand(cmd)
 		if err != nil {
 			if errors.Is(err, errInvalidAction) {
-				fmt.Printf("retry: %v\n", err.Error())
+				r.vlog("%s. try again.", err.Error())
 				continue
 			}
 			return fmt.Errorf("failed to run command: %v", err)
@@ -115,6 +125,11 @@ func (r *Runner) Run(task string) error {
 			{Role: "assistant", Content: encodeCommand(cmd)},
 			{Role: "user", Content: encodeCommand(Command{Feedback: feedback})},
 		}...)
+
+		numStep += 1
+		if numStep > r.Config.MaxSteps {
+			break
+		}
 	}
 
 	if !done {
@@ -156,7 +171,7 @@ func (r *Runner) runFileCommand(cmd Command) (string, error) {
 		return err.Error(), nil
 	}
 
-	return "success", nil
+	return FeedbackSuccess, nil
 }
 
 func (r *Runner) runPythonCommand(cmd Command) (string, error) {
@@ -200,15 +215,21 @@ func (r *Runner) runShellCommand(cmd Command) (string, error) {
 	}
 
 	if len(output) == 0 {
-		return "success", nil
+		return FeedbackSuccess, nil
 	}
 
 	lines := strings.Split(string(output), "\n")
 	if len(lines) > 5 {
-		return strings.Join(lines[len(lines)-5:], "\n"), nil
+		lines = lines[len(lines)-5:]
+		lines.append(["...(snip)..."], lines...)
+		return strings.Join(lines, "\n"), nil
 	}
 
 	return string(output), nil
+}
+
+func (r *Runner) vlog(format string, v ...any) {
+	log.Printf(format, v...)
 }
 
 func decodeCommand(reply string) (Command, error) {
