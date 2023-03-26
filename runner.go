@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 //go:embed prompt.txt
@@ -39,6 +41,11 @@ type Command struct {
 	Action   string `json:"action,omitempty"`
 	Input    string `json:"input,omitempty"`
 	Feedback string `json:"feedback,omitempty"`
+}
+
+type FileCommandInput struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
 }
 
 type Runner struct {
@@ -110,7 +117,7 @@ func (r *Runner) Run(task string) error {
 		if numStep > r.Config.MaxSteps {
 			break
 		}
-		msg = feedback
+		msg = fmt.Sprintf("feedback:\n```\n%s\n```\n", feedback)
 	}
 
 	if !done {
@@ -147,26 +154,28 @@ func (r *Runner) runCommand(cmd Command) (string, error) {
 }
 
 func (r *Runner) runFileCommand(cmd Command) (string, error) {
-	lines := strings.SplitN(cmd.Input, "\n", 2)
-	if len(lines) == 0 {
-		return "file path and content must be specified to create a file", nil
-	}
-	if len(lines) == 1 {
-		lines = append(lines, "")
+	var input FileCommandInput
+
+	err := yaml.Unmarshal([]byte(cmd.Input), &input)
+	if err != nil {
+		return "", err
 	}
 
-	filePath := lines[0]
-	if !filepath.IsAbs(filePath) {
-		filePath = filepath.Join(r.getWorkDir(), filePath)
+	if input.Path == "" {
+		return "file path must be specified", nil
 	}
 
-	dirPath := filepath.Dir(filePath)
-	err := os.MkdirAll(dirPath, 0755)
+	if !filepath.IsAbs(input.Path) {
+		input.Path = filepath.Join(r.getWorkDir(), input.Path)
+	}
+
+	dirPath := filepath.Dir(input.Path)
+	err = os.MkdirAll(dirPath, 0755)
 	if err != nil {
 		return err.Error(), nil
 	}
 
-	err = os.WriteFile(filePath, []byte(lines[1]), 0644)
+	err = os.WriteFile(input.Path, []byte(input.Content), 0644)
 	if err != nil {
 		return err.Error(), nil
 	}
@@ -221,6 +230,7 @@ func (r *Runner) runShellCommand(cmd Command) (string, error) {
 	lines := strings.Split(string(output), "\n")
 	if len(lines) > 5 {
 		lines = lines[len(lines)-5:]
+		lines = append(lines, FeedbackSuccess)
 		return strings.Join(lines, "\n"), nil
 	}
 
@@ -254,46 +264,45 @@ func (r *Runner) vlog(format string, v ...any) {
 }
 
 func decodeCommand(reply string) (Command, error) {
-	var cmd Command
+	var (
+		cmd   Command
+		block bool
+		i     int
+	)
 
 	lines := strings.Split(reply, "\n")
+	lineLen := len(lines)
+	input := []string{}
 
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-
-		if line == "" {
-			continue
-		}
-
+	for i < lineLen {
 		switch {
-		case strings.HasPrefix(line, "thought:"):
-			parts := strings.SplitN(line, ":", 2)
+		case strings.HasPrefix(lines[i], "thought:"):
+			parts := strings.SplitN(lines[i], ":", 2)
 			cmd.Thought = strings.Trim(parts[1], "\n ")
-		case strings.HasPrefix(line, "action:"):
-			parts := strings.SplitN(line, ":", 2)
+		case strings.HasPrefix(lines[i], "action:"):
+			parts := strings.SplitN(lines[i], ":", 2)
 			cmd.Action = strings.Trim(parts[1], "\n ")
-		case strings.HasPrefix(line, "input:"):
-			input := []string{}
-
-			start := false
-			for i < len(lines)-1 {
-				if strings.HasPrefix(lines[i+1], "```") {
-					if start {
-						break
+		case strings.HasPrefix(lines[i], "input:"):
+			i += 1
+			for i < lineLen {
+				if strings.HasPrefix(lines[i], "```") {
+					if !block {
+						block = true
+						i += 1
+						continue
 					}
-
-					start = true
-					i += 1
-					continue
+					break
+				}
+				if block {
+					input = append(input, lines[i])
 				}
 
-				input = append(input, lines[i+1])
 				i += 1
 			}
-
 			cmd.Input = strings.Join(input, "\n")
-			break
 		}
+
+		i += 1
 	}
 
 	return cmd, nil

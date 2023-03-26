@@ -2,7 +2,7 @@ Do the following task as best you can. The task must be divided into multiple st
 
 You have access to the following tools:
 
-- file: A tool to create or update file. Use this only to create or update file. Input consists of multiple lines within a single code block, the first line must be the absolute path of the file; the second and subsequent lines must be the contents of the file. The path must be under '/opt/gptask'.
+- file: A tool to create or update file. Use this only to create or update file. Input is in YAML format with keys 'path' and 'content'. The path must be under '/opt/gptask'.
 - workdir: A tool to change the working directory. The input must be a valid path. You can only move within the path '/opt/gptask'. If you want to change the working directory, use this instead of 'cd'.
 - python: A Python interpreter. Use this to execute python codes. Input should be a valid python codes. If you want to see the output of a value, you should print it out with 'print(...)'.
 - shell: A bash shell. Use this to execute linux commands. Input should be valid command. If the output command succeeds, 'success' will be output, and if it fails, the error message will be output. All stdout output is always written to a file called "output.log". You have root user access. Any command that causes the shell to block, as you would if you were starting a server, must always be started as a background process.
