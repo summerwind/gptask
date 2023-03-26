@@ -10,8 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/sashabaranov/go-openai"
 )
 
 //go:embed prompt.txt
@@ -45,48 +43,33 @@ type Command struct {
 
 type Runner struct {
 	Config  *Config
-	Client  *openai.Client
+	Session *Session
 	WorkDir string
 }
 
 func NewRunner(c *Config) *Runner {
 	return &Runner{
-		Config: c,
-		Client: openai.NewClient(c.APIKey),
+		Config:  c,
+		Session: NewSession(c),
 	}
 }
 
 func (r *Runner) Run(task string) error {
 	var done bool
-	var numStep int = 1
 
 	ctx := context.Background()
-
-	messages := []openai.ChatCompletionMessage{
-		{Role: "system", Content: systemContent},
-		{Role: "user", Content: task},
-	}
+	msg := task
+	numStep := 1
 
 	for {
-		req := openai.ChatCompletionRequest{
-			Model:       r.Config.Model,
-			Temperature: 0.0,
-			Stop:        []string{"feedback:"},
-			Messages:    messages,
-		}
-
-		res, err := r.Client.CreateChatCompletion(ctx, req)
+		reply, err := r.Session.Send(ctx, msg)
 		if err != nil {
-			return fmt.Errorf("API error: %v", err)
+			return err
 		}
 
-		reply := res.Choices[0].Message.Content
 		if reply == "" {
-			r.vlog("empty reply. continue.")
-			messages = append(messages, openai.ChatCompletionMessage{
-				Role:    "user",
-				Content: FeedbackContinue,
-			})
+			r.vlog("Empty reply - raw:\n%s", reply)
+			r.Session.Rewind()
 			continue
 		}
 
@@ -96,7 +79,8 @@ func (r *Runner) Run(task string) error {
 		}
 
 		if cmd.Thought == "" {
-			r.vlog("no thought found. raw reply:\n%s", reply)
+			r.vlog("No thought - raw:\n%s", reply)
+			r.Session.Rewind()
 			continue
 		}
 
@@ -114,23 +98,19 @@ func (r *Runner) Run(task string) error {
 		feedback, err := r.runCommand(cmd)
 		if err != nil {
 			if errors.Is(err, errInvalidAction) {
-				r.vlog("%s. try again.", err.Error())
+				r.vlog("Invalid action - raw:\n%s", reply)
+				r.Session.Rewind()
 				continue
 			}
 			return fmt.Errorf("failed to run command: %v", err)
 		}
-		feedback = strings.Trim(feedback, "\n")
 		fmt.Printf("%s\n\n", feedback)
-
-		messages = append(messages, []openai.ChatCompletionMessage{
-			{Role: "assistant", Content: encodeCommand(cmd)},
-			{Role: "user", Content: encodeCommand(Command{Feedback: feedback})},
-		}...)
 
 		numStep += 1
 		if numStep > r.Config.MaxSteps {
 			break
 		}
+		msg = feedback
 	}
 
 	if !done {
@@ -141,18 +121,29 @@ func (r *Runner) Run(task string) error {
 }
 
 func (r *Runner) runCommand(cmd Command) (string, error) {
+	var (
+		feedback string
+		err      error
+	)
+
 	switch cmd.Action {
 	case "file":
-		return r.runFileCommand(cmd)
+		feedback, err = r.runFileCommand(cmd)
 	case "python":
-		return r.runPythonCommand(cmd)
+		feedback, err = r.runPythonCommand(cmd)
 	case "shell":
-		return r.runShellCommand(cmd)
+		feedback, err = r.runShellCommand(cmd)
 	case "workdir":
-		return r.runWorkDirCommand(cmd)
+		feedback, err = r.runWorkDirCommand(cmd)
 	default:
-		return "", errInvalidAction
+		err = errInvalidAction
 	}
+
+	if err != nil {
+		return "", err
+	}
+
+	return strings.Trim(feedback, "\n"), nil
 }
 
 func (r *Runner) runFileCommand(cmd Command) (string, error) {
@@ -166,10 +157,7 @@ func (r *Runner) runFileCommand(cmd Command) (string, error) {
 
 	filePath := lines[0]
 	if !filepath.IsAbs(filePath) {
-		return "file path must be absolute path.", nil
-	}
-	if !strings.HasPrefix(filePath, r.Config.WorkDir) {
-		return "unauthorized file path.", nil
+		filePath = filepath.Join(r.getWorkDir(), filePath)
 	}
 
 	dirPath := filepath.Dir(filePath)
