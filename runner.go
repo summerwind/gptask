@@ -48,6 +48,10 @@ type FileCommandInput struct {
 	Content string `json:"content"`
 }
 
+type ChangeDirCommandInput struct {
+	Dir string `json:"dir"`
+}
+
 type Runner struct {
 	Config  *Config
 	Session *Session
@@ -140,8 +144,8 @@ func (r *Runner) runCommand(cmd Command) (string, error) {
 		feedback, err = r.runPythonCommand(cmd)
 	case "shell":
 		feedback, err = r.runShellCommand(cmd)
-	case "workdir":
-		feedback, err = r.runWorkDirCommand(cmd)
+	case "cd":
+		feedback, err = r.runChangeDirCommand(cmd)
 	default:
 		err = errInvalidAction
 	}
@@ -230,24 +234,28 @@ func (r *Runner) runShellCommand(cmd Command) (string, error) {
 	lines := strings.Split(string(output), "\n")
 	if len(lines) > 5 {
 		lines = lines[len(lines)-5:]
-		lines = append(lines, FeedbackSuccess)
 		return strings.Join(lines, "\n"), nil
 	}
 
 	return string(output), nil
 }
 
-func (r *Runner) runWorkDirCommand(cmd Command) (string, error) {
-	workDir := filepath.Clean(cmd.Input)
-	if !filepath.IsAbs(workDir) {
-		workDir = filepath.Join(r.Config.WorkDir, workDir)
+func (r *Runner) runChangeDirCommand(cmd Command) (string, error) {
+	var input ChangeDirCommandInput
+
+	err := yaml.Unmarshal([]byte(cmd.Input), &input)
+	if err != nil {
+		return "", err
 	}
 
-	if !strings.HasPrefix(workDir, r.Config.WorkDir) {
-		return "unauthorized path.", nil
+	if input.Dir == "" {
+		return "directory path must be specified", nil
 	}
 
-	r.WorkDir = workDir
+	if !filepath.IsAbs(input.Dir) {
+		input.Dir = filepath.Join(r.getWorkDir(), input.Dir)
+	}
+	r.WorkDir = filepath.Clean(input.Dir)
 
 	return FeedbackSuccess, nil
 }
