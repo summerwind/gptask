@@ -19,22 +19,23 @@ RUN apt update \
     tzdata \
     psmisc \
     curl \
+    gnupg \
     jq \
     zip \
-    golang \
     awscli \
-  && echo 'APT::Get::Assume-Yes "true";' > /etc/apt/apt.conf.d/90yes \
+  && echo 'APT::Get::Assume-Yes "true";' >> /etc/apt/apt.conf.d/90gptask \
+  && echo 'quiet "2";' >> /etc/apt/apt.conf.d/90gptask \
   && mkdir /opt/gptask
-
-RUN apt install python3 python3-pip \
-  && pip3 install requests boto3
 
 RUN add-apt-repository ppa:longsleep/golang-backports \
   && apt update \
-  && apt install golang-go
+  && apt install -y golang-go
 
 RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - \
-  && apt-get install -y nodejs
+   && apt install -y nodejs
+
+RUN apt install python3 python3-pip \
+  && pip3 install requests boto3
 
 COPY --from=build /usr/local/bin/gptask /usr/local/bin/gptask
 
