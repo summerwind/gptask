@@ -36,7 +36,6 @@ type Config struct {
 }
 
 type Command struct {
-	Task     string `json:"task,omitempty"`
 	Thought  string `json:"thought,omitempty"`
 	Action   string `json:"action,omitempty"`
 	Input    string `json:"input,omitempty"`
@@ -69,18 +68,18 @@ func (r *Runner) Run(task string) error {
 	var done bool
 
 	ctx := context.Background()
-	msg := task
 	numStep := 1
 
+	r.Session.AddUserMessage(task)
+
 	for {
-		reply, err := r.Session.Send(ctx, msg)
+		reply, err := r.Session.Send(ctx)
 		if err != nil {
 			return err
 		}
 
 		if reply == "" {
 			r.vlog("Empty reply - raw:\n%s", reply)
-			r.Session.Rewind()
 			continue
 		}
 
@@ -91,7 +90,6 @@ func (r *Runner) Run(task string) error {
 
 		if cmd.Thought == "" {
 			r.vlog("No thought - raw:\n%s", reply)
-			r.Session.Rewind()
 			continue
 		}
 
@@ -102,6 +100,7 @@ func (r *Runner) Run(task string) error {
 		}
 
 		if cmd.Action == "done" {
+			r.Session.AddAssistantMessage(encodeCommand(cmd))
 			done = true
 			break
 		}
@@ -110,18 +109,19 @@ func (r *Runner) Run(task string) error {
 		if err != nil {
 			if errors.Is(err, errInvalidAction) {
 				r.vlog("Invalid action - raw:\n%s", reply)
-				r.Session.Rewind()
 				continue
 			}
 			return fmt.Errorf("failed to run command: %v", err)
 		}
-		fmt.Printf("%s\n\n", feedback)
+		fmt.Printf("%s\n\n", feedback.Feedback)
+
+		r.Session.AddAssistantMessage(encodeCommand(cmd))
+		r.Session.AddUserMessage(encodeCommand(feedback))
 
 		numStep += 1
 		if numStep > r.Config.MaxSteps {
 			break
 		}
-		msg = fmt.Sprintf("feedback:\n```\n%s\n```\n", feedback)
 	}
 
 	if !done {
@@ -131,7 +131,7 @@ func (r *Runner) Run(task string) error {
 	return nil
 }
 
-func (r *Runner) runCommand(cmd Command) (string, error) {
+func (r *Runner) runCommand(cmd *Command) (*Command, error) {
 	var (
 		feedback string
 		err      error
@@ -151,13 +151,15 @@ func (r *Runner) runCommand(cmd Command) (string, error) {
 	}
 
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return strings.Trim(feedback, "\n"), nil
+	return &Command{
+		Feedback: strings.TrimRight(feedback, "\n"),
+	}, nil
 }
 
-func (r *Runner) runFileCommand(cmd Command) (string, error) {
+func (r *Runner) runFileCommand(cmd *Command) (string, error) {
 	var input FileCommandInput
 
 	err := yaml.Unmarshal([]byte(cmd.Input), &input)
@@ -187,7 +189,7 @@ func (r *Runner) runFileCommand(cmd Command) (string, error) {
 	return FeedbackSuccess, nil
 }
 
-func (r *Runner) runPythonCommand(cmd Command) (string, error) {
+func (r *Runner) runPythonCommand(cmd *Command) (string, error) {
 	python := exec.Command("python3", "-c", cmd.Input)
 	python.Dir = r.getWorkDir()
 
@@ -204,7 +206,7 @@ func (r *Runner) runPythonCommand(cmd Command) (string, error) {
 	return string(output), nil
 }
 
-func (r *Runner) runShellCommand(cmd Command) (string, error) {
+func (r *Runner) runShellCommand(cmd *Command) (string, error) {
 	var (
 		output []byte
 		err    error
@@ -231,16 +233,18 @@ func (r *Runner) runShellCommand(cmd Command) (string, error) {
 		return FeedbackSuccess, nil
 	}
 
-	lines := strings.Split(string(output), "\n")
+	outputStr := string(output)
+
+	lines := strings.Split(outputStr, "\n")
 	if len(lines) > 5 {
 		lines = lines[len(lines)-5:]
-		return strings.Join(lines, "\n"), nil
+		outputStr = strings.Join(lines, "\n")
 	}
 
-	return string(output), nil
+	return outputStr, nil
 }
 
-func (r *Runner) runChangeDirCommand(cmd Command) (string, error) {
+func (r *Runner) runChangeDirCommand(cmd *Command) (string, error) {
 	var input ChangeDirCommandInput
 
 	err := yaml.Unmarshal([]byte(cmd.Input), &input)
@@ -271,7 +275,7 @@ func (r *Runner) vlog(format string, v ...any) {
 	log.Printf(format, v...)
 }
 
-func decodeCommand(reply string) (Command, error) {
+func decodeCommand(reply string) (*Command, error) {
 	var (
 		cmd   Command
 		block bool
@@ -313,21 +317,19 @@ func decodeCommand(reply string) (Command, error) {
 		i += 1
 	}
 
-	return cmd, nil
+	return &cmd, nil
 }
 
-func encodeCommand(cmd Command) string {
+func encodeCommand(cmd *Command) string {
 	var lines []string
 
 	switch {
-	case cmd.Task != "":
-		lines = append(lines, fmt.Sprintf("task:\n```\n%s\n```", strings.Trim(cmd.Task, "\n")))
 	case cmd.Thought != "":
 		lines = append(lines, fmt.Sprintf("thought: %s", cmd.Thought))
 		lines = append(lines, fmt.Sprintf("action: %s", cmd.Action))
-		lines = append(lines, fmt.Sprintf("input:\n```\n%s\n```", strings.Trim(cmd.Input, "\n")))
+		lines = append(lines, fmt.Sprintf("input:\n```\n%s\n```\n", strings.Trim(cmd.Input, "\n")))
 	case cmd.Feedback != "":
-		lines = append(lines, fmt.Sprintf("feedback:\n```\n%s\n```", strings.Trim(cmd.Feedback, "\n")))
+		lines = append(lines, fmt.Sprintf("feedback:\n```\n%s\n```\n", strings.Trim(cmd.Feedback, "\n")))
 	}
 
 	return strings.Join(lines, "\n")

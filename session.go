@@ -25,12 +25,21 @@ func NewSession(c *Config) *Session {
 	}
 }
 
-func (s *Session) Send(ctx context.Context, msg string) (string, error) {
+func (s *Session) AddUserMessage(msg string) {
 	s.Messages = append(s.Messages, openai.ChatCompletionMessage{
 		Role:    "user",
 		Content: msg,
 	})
+}
 
+func (s *Session) AddAssistantMessage(msg string) {
+	s.Messages = append(s.Messages, openai.ChatCompletionMessage{
+		Role:    "assistant",
+		Content: msg,
+	})
+}
+
+func (s *Session) Send(ctx context.Context) (string, error) {
 	req := openai.ChatCompletionRequest{
 		Model:       s.Model,
 		Messages:    s.Messages,
@@ -45,18 +54,5 @@ func (s *Session) Send(ctx context.Context, msg string) (string, error) {
 	reply := res.Choices[0].Message.Content
 	reply = strings.TrimRight(reply, "\n")
 
-	s.Messages = append(s.Messages, openai.ChatCompletionMessage{
-		Role:    "assistant",
-		Content: reply,
-	})
-
 	return reply, nil
-}
-
-func (s *Session) Rewind() {
-	if len(s.Messages) == 1 {
-		return
-	}
-
-	s.Messages = s.Messages[:len(s.Messages)-2]
 }
