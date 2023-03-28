@@ -6,11 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/PuerkitoBio/goquery"
 	"gopkg.in/yaml.v3"
 )
 
@@ -49,6 +52,16 @@ type FileCommandInput struct {
 
 type ChangeDirCommandInput struct {
 	Dir string `json:"dir"`
+}
+
+type SearchCommandInput struct {
+	Query string `json:"query"`
+}
+
+type SearchResult struct {
+	Title string
+	Desc  string
+	URL   string
 }
 
 type Runner struct {
@@ -140,12 +153,14 @@ func (r *Runner) runCommand(cmd *Command) (*Command, error) {
 	switch cmd.Action {
 	case "file":
 		feedback, err = r.runFileCommand(cmd)
+	case "cd":
+		feedback, err = r.runChangeDirCommand(cmd)
 	case "python":
 		feedback, err = r.runPythonCommand(cmd)
 	case "shell":
 		feedback, err = r.runShellCommand(cmd)
-	case "cd":
-		feedback, err = r.runChangeDirCommand(cmd)
+	case "search":
+		feedback, err = r.runSearchCommand(cmd)
 	default:
 		err = errInvalidAction
 	}
@@ -203,7 +218,12 @@ func (r *Runner) runPythonCommand(cmd *Command) (string, error) {
 		return "", err
 	}
 
-	return string(output), nil
+	outputStr := string(output)
+	if len(output) == 0 {
+		outputStr = fmt.Sprintf("%s (no output)", FeedbackSuccess)
+	}
+
+	return outputStr, nil
 }
 
 func (r *Runner) runShellCommand(cmd *Command) (string, error) {
@@ -212,8 +232,10 @@ func (r *Runner) runShellCommand(cmd *Command) (string, error) {
 		err    error
 	)
 
+	workDir := r.getWorkDir()
+
 	shell := exec.Command("bash", "-e", "-o", "pipefail", "-c", cmd.Input)
-	shell.Dir = r.getWorkDir()
+	shell.Dir = workDir
 
 	output, err = shell.Output()
 	if err != nil {
@@ -224,13 +246,13 @@ func (r *Runner) runShellCommand(cmd *Command) (string, error) {
 		return "", err
 	}
 
-	err = os.WriteFile("output.log", output, 0644)
+	err = os.WriteFile(filepath.Join(workDir, "output.log"), output, 0644)
 	if err != nil {
 		return "", err
 	}
 
 	if len(output) == 0 {
-		return FeedbackSuccess, nil
+		return fmt.Sprintf("%s (no output)", FeedbackSuccess), nil
 	}
 
 	outputStr := string(output)
@@ -242,6 +264,80 @@ func (r *Runner) runShellCommand(cmd *Command) (string, error) {
 	}
 
 	return outputStr, nil
+}
+
+func (r *Runner) runSearchCommand(cmd *Command) (string, error) {
+	var input SearchCommandInput
+
+	err := yaml.Unmarshal([]byte(cmd.Input), &input)
+	if err != nil {
+		return "", err
+	}
+
+	if input.Query == "" {
+		return "query must be specified", nil
+	}
+
+	payload := url.Values{}
+	payload.Add("q", input.Query)
+	payload.Add("kl", "")
+	payload.Add("df", "")
+
+	req, err := http.NewRequest("POST", "https://lite.duckduckgo.com/lite/", strings.NewReader(payload.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "https://lite.duckduckgo.com")
+	req.Header.Set("User-Agent", "gptask")
+
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	if res.StatusCode != 200 {
+		return "", fmt.Errorf("failed to get search result (status: %d)", res.StatusCode)
+	}
+
+	defer res.Body.Close()
+
+	doc, err := goquery.NewDocumentFromReader(res.Body)
+	if err != nil {
+		return "", err
+	}
+
+	results := []SearchResult{}
+	doc.Find("body > form > div > table:nth-child(7) > tbody > tr > td").Each(func(i int, s *goquery.Selection) {
+		text := strings.TrimSpace(s.Text())
+		if len(text) == 0 {
+			return
+		}
+
+		index := i / 8
+		if len(results) <= index {
+			results = append(results, SearchResult{})
+		}
+
+		switch {
+		case i%8 == 1:
+			results[index].Title = text
+			results[index].URL, _ = s.Find("a").Attr("href")
+		case i%8 == 3:
+			results[index].Desc = text
+		}
+	})
+
+	if len(results) > 3 {
+		results = results[:3]
+	}
+
+	lines := []string{}
+	for i := range results {
+		lines = append(lines, fmt.Sprintf("%d. %s: %s", i+1, results[i].Title, results[i].Desc))
+	}
+
+	return strings.Join(lines, "\n"), nil
 }
 
 func (r *Runner) runChangeDirCommand(cmd *Command) (string, error) {
