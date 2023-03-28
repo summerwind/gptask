@@ -355,7 +355,14 @@ func (r *Runner) runChangeDirCommand(cmd *Command) (string, error) {
 	if !filepath.IsAbs(input.Dir) {
 		input.Dir = filepath.Join(r.getWorkDir(), input.Dir)
 	}
-	r.WorkDir = filepath.Clean(input.Dir)
+	input.Dir = filepath.Clean(input.Dir)
+
+	err = os.MkdirAll(input.Dir, 0755)
+	if err != nil {
+		return err.Error(), nil
+	}
+
+	r.WorkDir = input.Dir
 
 	return FeedbackSuccess, nil
 }
