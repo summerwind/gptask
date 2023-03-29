@@ -18,6 +18,8 @@ func NewSession(c *Config) *Session {
 		{Role: "system", Content: systemContent},
 	}
 
+	debugLog("new session", "")
+
 	return &Session{
 		Client:   openai.NewClient(c.APIKey),
 		Model:    c.Model,
@@ -30,6 +32,8 @@ func (s *Session) AddUserMessage(msg string) {
 		Role:    "user",
 		Content: msg,
 	})
+
+	debugLog("add user message", msg)
 }
 
 func (s *Session) AddAssistantMessage(msg string) {
@@ -37,6 +41,8 @@ func (s *Session) AddAssistantMessage(msg string) {
 		Role:    "assistant",
 		Content: msg,
 	})
+
+	debugLog("add assistant message", msg)
 }
 
 func (s *Session) Send(ctx context.Context) (string, error) {
@@ -53,6 +59,8 @@ func (s *Session) Send(ctx context.Context) (string, error) {
 	}
 	reply := res.Choices[0].Message.Content
 	reply = strings.TrimRight(reply, "\n")
+
+	debugLog("reply", reply)
 
 	return reply, nil
 }

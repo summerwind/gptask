@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -35,7 +34,7 @@ type Config struct {
 	Model    string
 	WorkDir  string
 	MaxSteps int
-	Verbose  bool
+	Debug    string
 }
 
 type FileActionInput struct {
@@ -85,17 +84,18 @@ func (r *Runner) Run(task string) error {
 		}
 
 		if reply == "" {
-			r.vlog("Empty reply - raw:\n%s", reply)
+			debugLog("empty reply", "")
 			continue
 		}
 
 		s, err := decodeStep(reply)
 		if err != nil {
-			return err
+			debugLog("invalid format", "")
+			continue
 		}
 
 		if s.Thought == "" {
-			r.vlog("No thought - raw:\n%s", reply)
+			debugLog("no thought found", "")
 			continue
 		}
 
@@ -113,7 +113,7 @@ func (r *Runner) Run(task string) error {
 		feedback, err := r.runAction(s)
 		if err != nil {
 			if errors.Is(err, errInvalidAction) {
-				r.vlog("Invalid action - raw:\n%s", reply)
+				debugLog("invalid action", "")
 				continue
 			}
 			return fmt.Errorf("failed to run command: %v", err)
@@ -364,8 +364,4 @@ func (r *Runner) getWorkDir() string {
 		return r.Config.WorkDir
 	}
 	return r.WorkDir
-}
-
-func (r *Runner) vlog(format string, v ...any) {
-	log.Printf(format, v...)
 }
