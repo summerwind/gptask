@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -10,6 +11,28 @@ type Step struct {
 	Action   string `json:"action,omitempty"`
 	Input    string `json:"input,omitempty"`
 	Feedback string `json:"feedback,omitempty"`
+}
+
+func (s *Step) Validate() error {
+	if s.Action == "done" {
+		return nil
+	}
+
+	if s.Thought == "" {
+		return errors.New("thought must be specified")
+	}
+	if s.Input == "" {
+		return errors.New("input must be specified")
+	}
+
+	switch s.Action {
+	case "file", "cd", "python", "shell", "search":
+		// valid.
+	default:
+		return errors.New("invalid action value")
+	}
+
+	return nil
 }
 
 func decodeStep(msg string) (*Step, error) {

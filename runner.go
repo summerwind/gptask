@@ -94,8 +94,9 @@ func (r *Runner) Run(task string) error {
 			continue
 		}
 
-		if s.Thought == "" {
-			debugLog("no thought found", "")
+		err = s.Validate()
+		if err != nil {
+			debugLog(err.Error(), "")
 			continue
 		}
 
