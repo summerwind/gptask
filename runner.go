@@ -38,27 +38,20 @@ type Config struct {
 	Verbose  bool
 }
 
-type Command struct {
-	Thought  string `json:"thought,omitempty"`
-	Action   string `json:"action,omitempty"`
-	Input    string `json:"input,omitempty"`
-	Feedback string `json:"feedback,omitempty"`
-}
-
-type FileCommandInput struct {
+type FileActionInput struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
 }
 
-type ChangeDirCommandInput struct {
+type ChangeDirActionInput struct {
 	Dir string `json:"dir"`
 }
 
-type SearchCommandInput struct {
+type SearchActionInput struct {
 	Query string `json:"query"`
 }
 
-type SearchResult struct {
+type SearchActionQueryResult struct {
 	Title string
 	Desc  string
 	URL   string
@@ -96,29 +89,28 @@ func (r *Runner) Run(task string) error {
 			continue
 		}
 
-		cmd, err := decodeCommand(reply)
+		s, err := decodeStep(reply)
 		if err != nil {
 			return err
 		}
 
-		if cmd.Thought == "" {
+		if s.Thought == "" {
 			r.vlog("No thought - raw:\n%s", reply)
 			continue
 		}
 
-		fmt.Printf("Step %d: %s\n", numStep, cmd.Thought)
-		fmt.Printf("Action: %s\n", cmd.Action)
-		if cmd.Input != "" {
-			fmt.Printf("%s\n", cmd.Input)
+		fmt.Printf("Step %d: %s\n", numStep, s.Thought)
+		fmt.Printf("Action: %s\n", s.Action)
+		if s.Input != "" {
+			fmt.Printf("%s\n", s.Input)
 		}
 
-		if cmd.Action == "done" {
-			r.Session.AddAssistantMessage(encodeCommand(cmd))
+		if s.Action == "done" {
 			done = true
 			break
 		}
 
-		feedback, err := r.runCommand(cmd)
+		feedback, err := r.runAction(s)
 		if err != nil {
 			if errors.Is(err, errInvalidAction) {
 				r.vlog("Invalid action - raw:\n%s", reply)
@@ -128,8 +120,8 @@ func (r *Runner) Run(task string) error {
 		}
 		fmt.Printf("%s\n\n", feedback.Feedback)
 
-		r.Session.AddAssistantMessage(encodeCommand(cmd))
-		r.Session.AddUserMessage(encodeCommand(feedback))
+		r.Session.AddAssistantMessage(encodeStep(s))
+		r.Session.AddUserMessage(encodeStep(feedback))
 
 		numStep += 1
 		if numStep > r.Config.MaxSteps {
@@ -144,23 +136,23 @@ func (r *Runner) Run(task string) error {
 	return nil
 }
 
-func (r *Runner) runCommand(cmd *Command) (*Command, error) {
+func (r *Runner) runAction(s *Step) (*Step, error) {
 	var (
 		feedback string
 		err      error
 	)
 
-	switch cmd.Action {
+	switch s.Action {
 	case "file":
-		feedback, err = r.runFileCommand(cmd)
+		feedback, err = r.runFileAction(s)
 	case "cd":
-		feedback, err = r.runChangeDirCommand(cmd)
+		feedback, err = r.runChangeDirAction(s)
 	case "python":
-		feedback, err = r.runPythonCommand(cmd)
+		feedback, err = r.runPythonAction(s)
 	case "shell":
-		feedback, err = r.runShellCommand(cmd)
+		feedback, err = r.runShellAction(s)
 	case "search":
-		feedback, err = r.runSearchCommand(cmd)
+		feedback, err = r.runSearchAction(s)
 	default:
 		err = errInvalidAction
 	}
@@ -169,15 +161,15 @@ func (r *Runner) runCommand(cmd *Command) (*Command, error) {
 		return nil, err
 	}
 
-	return &Command{
+	return &Step{
 		Feedback: strings.TrimRight(feedback, "\n"),
 	}, nil
 }
 
-func (r *Runner) runFileCommand(cmd *Command) (string, error) {
-	var input FileCommandInput
+func (r *Runner) runFileAction(s *Step) (string, error) {
+	var input FileActionInput
 
-	err := yaml.Unmarshal([]byte(cmd.Input), &input)
+	err := yaml.Unmarshal([]byte(s.Input), &input)
 	if err != nil {
 		return "", err
 	}
@@ -204,8 +196,8 @@ func (r *Runner) runFileCommand(cmd *Command) (string, error) {
 	return FeedbackSuccess, nil
 }
 
-func (r *Runner) runPythonCommand(cmd *Command) (string, error) {
-	python := exec.Command("python3", "-c", cmd.Input)
+func (r *Runner) runPythonAction(s *Step) (string, error) {
+	python := exec.Command("python3", "-c", s.Input)
 	python.Dir = r.getWorkDir()
 
 	output, err := python.CombinedOutput()
@@ -226,7 +218,7 @@ func (r *Runner) runPythonCommand(cmd *Command) (string, error) {
 	return outputStr, nil
 }
 
-func (r *Runner) runShellCommand(cmd *Command) (string, error) {
+func (r *Runner) runShellAction(s *Step) (string, error) {
 	var (
 		output []byte
 		err    error
@@ -234,7 +226,7 @@ func (r *Runner) runShellCommand(cmd *Command) (string, error) {
 
 	workDir := r.getWorkDir()
 
-	shell := exec.Command("bash", "-e", "-o", "pipefail", "-c", cmd.Input)
+	shell := exec.Command("bash", "-e", "-o", "pipefail", "-c", s.Input)
 	shell.Dir = workDir
 
 	output, err = shell.Output()
@@ -266,10 +258,10 @@ func (r *Runner) runShellCommand(cmd *Command) (string, error) {
 	return outputStr, nil
 }
 
-func (r *Runner) runSearchCommand(cmd *Command) (string, error) {
-	var input SearchCommandInput
+func (r *Runner) runSearchAction(s *Step) (string, error) {
+	var input SearchActionInput
 
-	err := yaml.Unmarshal([]byte(cmd.Input), &input)
+	err := yaml.Unmarshal([]byte(s.Input), &input)
 	if err != nil {
 		return "", err
 	}
@@ -307,7 +299,7 @@ func (r *Runner) runSearchCommand(cmd *Command) (string, error) {
 		return "", err
 	}
 
-	results := []SearchResult{}
+	results := []SearchActionQueryResult{}
 	doc.Find("body > form > div > table:nth-child(7) > tbody > tr > td").Each(func(i int, s *goquery.Selection) {
 		text := strings.TrimSpace(s.Text())
 		if len(text) == 0 {
@@ -316,7 +308,7 @@ func (r *Runner) runSearchCommand(cmd *Command) (string, error) {
 
 		index := i / 8
 		if len(results) <= index {
-			results = append(results, SearchResult{})
+			results = append(results, SearchActionQueryResult{})
 		}
 
 		switch {
@@ -340,10 +332,10 @@ func (r *Runner) runSearchCommand(cmd *Command) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-func (r *Runner) runChangeDirCommand(cmd *Command) (string, error) {
-	var input ChangeDirCommandInput
+func (r *Runner) runChangeDirAction(s *Step) (string, error) {
+	var input ChangeDirActionInput
 
-	err := yaml.Unmarshal([]byte(cmd.Input), &input)
+	err := yaml.Unmarshal([]byte(s.Input), &input)
 	if err != nil {
 		return "", err
 	}
@@ -376,64 +368,4 @@ func (r *Runner) getWorkDir() string {
 
 func (r *Runner) vlog(format string, v ...any) {
 	log.Printf(format, v...)
-}
-
-func decodeCommand(reply string) (*Command, error) {
-	var (
-		cmd   Command
-		block bool
-		i     int
-	)
-
-	lines := strings.Split(reply, "\n")
-	lineLen := len(lines)
-	input := []string{}
-
-	for i < lineLen {
-		switch {
-		case strings.HasPrefix(lines[i], "thought:"):
-			parts := strings.SplitN(lines[i], ":", 2)
-			cmd.Thought = strings.Trim(parts[1], "\n ")
-		case strings.HasPrefix(lines[i], "action:"):
-			parts := strings.SplitN(lines[i], ":", 2)
-			cmd.Action = strings.Trim(parts[1], "\n ")
-		case strings.HasPrefix(lines[i], "input:"):
-			i += 1
-			for i < lineLen {
-				if strings.HasPrefix(lines[i], "```") {
-					if !block {
-						block = true
-						i += 1
-						continue
-					}
-					break
-				}
-				if block {
-					input = append(input, lines[i])
-				}
-
-				i += 1
-			}
-			cmd.Input = strings.Join(input, "\n")
-		}
-
-		i += 1
-	}
-
-	return &cmd, nil
-}
-
-func encodeCommand(cmd *Command) string {
-	var lines []string
-
-	switch {
-	case cmd.Thought != "":
-		lines = append(lines, fmt.Sprintf("thought: %s", cmd.Thought))
-		lines = append(lines, fmt.Sprintf("action: %s", cmd.Action))
-		lines = append(lines, fmt.Sprintf("input:\n```\n%s\n```\n", strings.Trim(cmd.Input, "\n")))
-	case cmd.Feedback != "":
-		lines = append(lines, fmt.Sprintf("feedback:\n```\n%s\n```\n", strings.Trim(cmd.Feedback, "\n")))
-	}
-
-	return strings.Join(lines, "\n")
 }
