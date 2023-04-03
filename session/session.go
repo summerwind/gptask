@@ -1,10 +1,12 @@
-package main
+package session
 
 import (
 	"context"
+	_ "embed"
 	"strings"
 
 	"github.com/sashabaranov/go-openai"
+	"github.com/summerwind/gptask/config"
 )
 
 type Session struct {
@@ -13,44 +15,36 @@ type Session struct {
 	Messages []openai.ChatCompletionMessage
 }
 
-func NewSession(c *Config) *Session {
-	messages := []openai.ChatCompletionMessage{
-		{Role: "system", Content: systemContent},
-	}
-
-	debugLog("new session", "")
-
+func New(c *config.Config, systemPrompt string) *Session {
 	return &Session{
-		Client:   openai.NewClient(c.APIKey),
-		Model:    c.Model,
-		Messages: messages,
+		Client: openai.NewClient(c.APIKey),
+		Model:  c.Model,
+		Messages: []openai.ChatCompletionMessage{
+			{Role: "system", Content: systemPrompt},
+		},
 	}
 }
 
-func (s *Session) AddUserMessage(msg string) {
+func (s *Session) AddUserMessage(prompt string) {
 	s.Messages = append(s.Messages, openai.ChatCompletionMessage{
 		Role:    "user",
-		Content: msg,
+		Content: prompt,
 	})
-
-	debugLog("add user message", msg)
 }
 
-func (s *Session) AddAssistantMessage(msg string) {
+func (s *Session) AddAssistantMessage(prompt string) {
 	s.Messages = append(s.Messages, openai.ChatCompletionMessage{
 		Role:    "assistant",
-		Content: msg,
+		Content: prompt,
 	})
-
-	debugLog("add assistant message", msg)
 }
 
-func (s *Session) Send(ctx context.Context) (string, error) {
+func (s *Session) GetCompletion(ctx context.Context) (string, error) {
 	req := openai.ChatCompletionRequest{
 		Model:       s.Model,
 		Messages:    s.Messages,
 		Temperature: 0.0,
-		Stop:        []string{"feedback:"},
+		Stop:        []string{"observation:"},
 	}
 
 	res, err := s.Client.CreateChatCompletion(ctx, req)
@@ -59,8 +53,6 @@ func (s *Session) Send(ctx context.Context) (string, error) {
 	}
 	reply := res.Choices[0].Message.Content
 	reply = strings.TrimRight(reply, "\n")
-
-	debugLog("reply", reply)
 
 	return reply, nil
 }

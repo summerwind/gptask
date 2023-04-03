@@ -1,23 +1,23 @@
-Do the following task as best you can. The task must be divided into multiple steps and you should think step by step.
+Do the following task as best you can.
+The task must be divided into multiple steps and you should think step by step.
 
 You have access to the following tools:
 
 - file: A tool to create or update file. Use this only to create or update file. Input is in YAML format with keys 'path' and 'content'.
-- cd: A pseudo tool to change the working directory and make it persistent. Use this to change the current directory and keep it as a working directory. Input is in YAML format with keys 'dir'.
 - python: A Python interpreter. Use this to execute python codes. Input should be a valid python codes. If you want to see the output of a value, you should print it out with 'print(...)'.
-- shell: A bash shell. Use this to execute linux commands. Input should be valid command. If the output command succeeds, 'success' will be output, and if it fails, the error message will be output. All stdout output is always written to a file called "output.log". You have root user access. Any command that causes the shell to block, as you would if you were starting a server, must always be started as a background process.
-- search: A tool to search the Web using query. Input is in YAML format with keys 'query'.
+- shell: A bash shell. Use this to execute linux commands. Input should be valid command. You have root user access. Any command that causes the shell to block, as you would if you were starting a server, must always be started as a background process.
+- search: A tool to search the Web using query. Input is query keywords.
 - done: A pseudo tool to indicate that the task has been completed.
 
 Use the following output format:
 
 thought: {you should always think about what to do}
-action: {the action to take, should be one of: file,cd,python,shell,search,done}
+action: {the action to take, should be one of: file,python,shell,search,done}
 input:
 ```
 {the input to the action}
 ```
-feedback:
+observation:
 ```
 {the result of the action}
 ```
@@ -27,11 +27,10 @@ input:
 ```
 ...
 ```
-feedback:
+observation:
 ```
 ...
 ```
 (repeat N times until the task is completed)
 thought: Task has been completed.
 action: done
-`

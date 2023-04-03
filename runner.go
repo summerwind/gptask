@@ -14,10 +14,15 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"gopkg.in/yaml.v3"
+
+	"github.com/summerwind/gptask/config"
+	"github.com/summerwind/gptask/log"
+	"github.com/summerwind/gptask/session"
+	"github.com/summerwind/gptask/shell"
 )
 
 //go:embed prompt.txt
-var systemContent string
+var systemPrompt string
 
 var (
 	errInvalidFormat = errors.New("invalid format")
@@ -25,25 +30,13 @@ var (
 )
 
 const (
-	FeedbackSuccess  = "Success"
-	FeedbackContinue = "Continue"
+	ObservationSuccess             = "success"
+	ObservationSuccessWithNoOutput = "success (no output)"
 )
-
-type Config struct {
-	APIKey   string
-	Model    string
-	WorkDir  string
-	MaxSteps int
-	Debug    string
-}
 
 type FileActionInput struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
-}
-
-type ChangeDirActionInput struct {
-	Dir string `json:"dir"`
 }
 
 type SearchActionInput struct {
@@ -57,15 +50,16 @@ type SearchActionQueryResult struct {
 }
 
 type Runner struct {
-	Config  *Config
-	Session *Session
-	WorkDir string
+	config  *config.Config
+	session *session.Session
+	shell   *shell.Shell
 }
 
-func NewRunner(c *Config) *Runner {
+func NewRunner(c *config.Config) *Runner {
 	return &Runner{
-		Config:  c,
-		Session: NewSession(c),
+		config:  c,
+		session: session.New(c, systemPrompt),
+		shell:   shell.New(),
 	}
 }
 
@@ -75,204 +69,194 @@ func (r *Runner) Run(task string) error {
 	ctx := context.Background()
 	numStep := 1
 
-	r.Session.AddUserMessage(task)
+	err := r.shell.Start()
+	if err != nil {
+		return err
+	}
+	defer r.shell.Stop()
+
+	r.session.AddUserMessage(task)
 
 	for {
-		reply, err := r.Session.Send(ctx)
+		var (
+			obs string
+			err error
+		)
+
+		reply, err := r.session.GetCompletion(ctx)
 		if err != nil {
 			return err
 		}
+		log.Debug("reply", reply)
 
 		if reply == "" {
-			debugLog("empty reply", "")
+			log.Debug("retry", "empty reply")
 			continue
 		}
 
 		s, err := decodeStep(reply)
 		if err != nil {
-			debugLog("invalid format", "")
+			log.Debug("retry", err.Error())
 			continue
 		}
 
-		err = s.Validate()
-		if err != nil {
-			debugLog(err.Error(), "")
-			continue
-		}
-
-		fmt.Printf("Step %d: %s\n", numStep, s.Thought)
-		fmt.Printf("Action: %s\n", s.Action)
-		if s.Input != "" {
-			fmt.Printf("%s\n", s.Input)
-		}
+		log.Comment(fmt.Sprintf("Step %d: %s", numStep, s.Thought))
 
 		if s.Action == "done" {
 			done = true
 			break
 		}
 
-		feedback, err := r.runAction(s)
+		switch s.Action {
+		case "file":
+			obs, err = r.runFileAction(s)
+		case "python":
+			obs, err = r.runPythonAction(s)
+		case "shell":
+			obs, err = r.runShellAction(s)
+		case "search":
+			obs, err = r.runSearchAction(s)
+		default:
+			err = errInvalidAction
+		}
+
 		if err != nil {
 			if errors.Is(err, errInvalidAction) {
-				debugLog("invalid action", "")
+				log.Debug("retry", err.Error())
 				continue
 			}
 			return fmt.Errorf("failed to run command: %v", err)
 		}
-		fmt.Printf("%s\n\n", feedback.Feedback)
 
-		r.Session.AddAssistantMessage(encodeStep(s))
-		r.Session.AddUserMessage(encodeStep(feedback))
+		r.session.AddAssistantMessage(encodeStep(s))
+		r.session.AddUserMessage(encodeStep(&Step{Observation: obs}))
+
+		log.Stdout("")
 
 		numStep += 1
-		if numStep > r.Config.MaxSteps {
+		if numStep > r.config.MaxSteps {
 			break
 		}
 	}
 
-	if !done {
-		fmt.Println("The maximum number of steps has been reached")
+	if done {
+		log.Comment("Done")
+	} else {
+		log.Comment("The maximum number of steps has been reached")
 	}
 
 	return nil
 }
 
-func (r *Runner) runAction(s *Step) (*Step, error) {
-	var (
-		feedback string
-		err      error
-	)
-
-	switch s.Action {
-	case "file":
-		feedback, err = r.runFileAction(s)
-	case "cd":
-		feedback, err = r.runChangeDirAction(s)
-	case "python":
-		feedback, err = r.runPythonAction(s)
-	case "shell":
-		feedback, err = r.runShellAction(s)
-	case "search":
-		feedback, err = r.runSearchAction(s)
-	default:
-		err = errInvalidAction
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &Step{
-		Feedback: strings.TrimRight(feedback, "\n"),
-	}, nil
-}
-
 func (r *Runner) runFileAction(s *Step) (string, error) {
-	var input FileActionInput
+	var (
+		input  FileActionInput
+		output string
+	)
 
 	err := yaml.Unmarshal([]byte(s.Input), &input)
 	if err != nil {
 		return "", err
 	}
 
+	log.Command(fmt.Sprintf("vim %s", input.Path))
+
 	if input.Path == "" {
-		return "file path must be specified", nil
+		output = "file path must be specified"
+		log.Stderr(output)
+		return output, nil
 	}
 
 	if !filepath.IsAbs(input.Path) {
-		input.Path = filepath.Join(r.getWorkDir(), input.Path)
+		input.Path = filepath.Join(r.shell.WorkDir(), input.Path)
 	}
 
 	dirPath := filepath.Dir(input.Path)
 	err = os.MkdirAll(dirPath, 0755)
 	if err != nil {
-		return err.Error(), nil
+		return "", err
 	}
 
 	err = os.WriteFile(input.Path, []byte(input.Content), 0644)
 	if err != nil {
-		return err.Error(), nil
+		return "", err
 	}
 
-	return FeedbackSuccess, nil
+	log.CodeBlock(input.Content)
+
+	return ObservationSuccess, nil
 }
 
 func (r *Runner) runPythonAction(s *Step) (string, error) {
+	log.Command("python3")
+	log.CodeBlock(s.Input)
+
 	python := exec.Command("python3", "-c", s.Input)
-	python.Dir = r.getWorkDir()
+	python.Dir = r.shell.WorkDir()
 
 	output, err := python.CombinedOutput()
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
+			log.Stderr(string(output))
 			return string(output), nil
 
 		}
 		return "", err
 	}
 
-	outputStr := string(output)
-	if len(output) == 0 {
-		outputStr = fmt.Sprintf("%s (no output)", FeedbackSuccess)
+	outputStr := strings.TrimRight(string(output), "\n")
+	if outputStr == "" {
+		outputStr = ObservationSuccessWithNoOutput
 	}
+
+	log.Stdout(outputStr)
 
 	return outputStr, nil
 }
 
 func (r *Runner) runShellAction(s *Step) (string, error) {
 	var (
-		output []byte
+		rc     int
+		stdout string
+		stderr string
 		err    error
 	)
 
-	workDir := r.getWorkDir()
+	commands := strings.Split(s.Input, "\n")
+	for _, cmd := range commands {
+		log.Command(cmd)
 
-	shell := exec.Command("bash", "-e", "-o", "pipefail", "-c", s.Input)
-	shell.Dir = workDir
-
-	output, err = shell.Output()
-	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return string(exitErr.Stderr), nil
+		rc, stdout, stderr, err = r.shell.Run(cmd)
+		if err != nil {
+			return "", err
 		}
-		return "", err
+
+		if rc != 0 {
+			return stderr, nil
+		}
 	}
 
-	err = os.WriteFile(filepath.Join(workDir, "output.log"), output, 0644)
-	if err != nil {
-		return "", err
+	if len(stdout) == 0 {
+		return ObservationSuccess, nil
 	}
 
-	if len(output) == 0 {
-		return fmt.Sprintf("%s (no output)", FeedbackSuccess), nil
-	}
-
-	outputStr := string(output)
-
-	lines := strings.Split(outputStr, "\n")
-	if len(lines) > 5 {
-		lines = lines[len(lines)-5:]
-		outputStr = strings.Join(lines, "\n")
-	}
-
-	return outputStr, nil
+	return stdout, nil
 }
 
 func (r *Runner) runSearchAction(s *Step) (string, error) {
-	var input SearchActionInput
+	var output string
 
-	err := yaml.Unmarshal([]byte(s.Input), &input)
-	if err != nil {
-		return "", err
-	}
+	log.Command(fmt.Sprintf("search %s", s.Input))
 
-	if input.Query == "" {
-		return "query must be specified", nil
+	if s.Input == "" {
+		output = "query must be specified"
+		log.Stderr(output)
+		return output, nil
 	}
 
 	payload := url.Values{}
-	payload.Add("q", input.Query)
+	payload.Add("q", s.Input)
 	payload.Add("kl", "")
 	payload.Add("df", "")
 
@@ -329,40 +313,9 @@ func (r *Runner) runSearchAction(s *Step) (string, error) {
 	for i := range results {
 		lines = append(lines, fmt.Sprintf("%d. %s: %s", i+1, results[i].Title, results[i].Desc))
 	}
+	output = strings.Join(lines, "\n")
 
-	return strings.Join(lines, "\n"), nil
-}
+	log.CodeBlock(output)
 
-func (r *Runner) runChangeDirAction(s *Step) (string, error) {
-	var input ChangeDirActionInput
-
-	err := yaml.Unmarshal([]byte(s.Input), &input)
-	if err != nil {
-		return "", err
-	}
-
-	if input.Dir == "" {
-		return "directory path must be specified", nil
-	}
-
-	if !filepath.IsAbs(input.Dir) {
-		input.Dir = filepath.Join(r.getWorkDir(), input.Dir)
-	}
-	input.Dir = filepath.Clean(input.Dir)
-
-	err = os.MkdirAll(input.Dir, 0755)
-	if err != nil {
-		return err.Error(), nil
-	}
-
-	r.WorkDir = input.Dir
-
-	return FeedbackSuccess, nil
-}
-
-func (r *Runner) getWorkDir() string {
-	if r.WorkDir == "" {
-		return r.Config.WorkDir
-	}
-	return r.WorkDir
+	return output, nil
 }

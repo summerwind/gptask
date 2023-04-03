@@ -7,10 +7,10 @@ import (
 )
 
 type Step struct {
-	Thought  string `json:"thought,omitempty"`
-	Action   string `json:"action,omitempty"`
-	Input    string `json:"input,omitempty"`
-	Feedback string `json:"feedback,omitempty"`
+	Thought     string `json:"thought,omitempty"`
+	Action      string `json:"action,omitempty"`
+	Input       string `json:"input,omitempty"`
+	Observation string `json:"observation,omitempty"`
 }
 
 func (s *Step) Validate() error {
@@ -26,7 +26,7 @@ func (s *Step) Validate() error {
 	}
 
 	switch s.Action {
-	case "file", "cd", "python", "shell", "search":
+	case "file", "python", "shell", "search":
 		// valid.
 	default:
 		return errors.New("invalid action value")
@@ -77,6 +77,11 @@ func decodeStep(msg string) (*Step, error) {
 		i += 1
 	}
 
+	err := s.Validate()
+	if err != nil {
+		return nil, err
+	}
+
 	return &s, nil
 }
 
@@ -88,8 +93,8 @@ func encodeStep(s *Step) string {
 		lines = append(lines, fmt.Sprintf("thought: %s", s.Thought))
 		lines = append(lines, fmt.Sprintf("action: %s", s.Action))
 		lines = append(lines, fmt.Sprintf("input:\n```\n%s\n```\n", strings.Trim(s.Input, "\n")))
-	case s.Feedback != "":
-		lines = append(lines, fmt.Sprintf("feedback:\n```\n%s\n```\n", strings.Trim(s.Feedback, "\n")))
+	case s.Observation != "":
+		lines = append(lines, fmt.Sprintf("observation:\n```\n%s\n```\n", strings.Trim(s.Observation, "\n")))
 	}
 
 	return strings.Join(lines, "\n")

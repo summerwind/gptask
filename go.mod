@@ -4,6 +4,7 @@ go 1.20
 
 require (
 	github.com/PuerkitoBio/goquery v1.8.1
+	github.com/logrusorgru/aurora/v4 v4.0.0
 	github.com/sashabaranov/go-openai v1.5.4
 	github.com/spf13/cobra v1.6.1
 	gopkg.in/yaml.v3 v3.0.1
