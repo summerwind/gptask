@@ -128,10 +128,10 @@ func (r *Runner) Run(task string) error {
 			return fmt.Errorf("failed to run command: %v", err)
 		}
 
+		log.Stdout("")
+
 		r.session.AddAssistantMessage(encodeStep(s))
 		r.session.AddUserMessage(encodeStep(&Step{Observation: obs}))
-
-		log.Stdout("")
 
 		numStep += 1
 		if numStep > r.config.MaxSteps {
@@ -233,12 +233,15 @@ func (r *Runner) runShellAction(s *Step) (string, error) {
 		}
 
 		if rc != 0 {
+			if len(stderr) == 0 {
+				return fmt.Sprintf("failed (exit code: %d)", rc), nil
+			}
 			return stderr, nil
 		}
 	}
 
 	if len(stdout) == 0 {
-		return ObservationSuccess, nil
+		return ObservationSuccessWithNoOutput, nil
 	}
 
 	return stdout, nil
