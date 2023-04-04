@@ -225,6 +225,10 @@ func (r *Runner) runShellAction(s *Step) (string, error) {
 
 	commands := strings.Split(s.Input, "\n")
 	for _, cmd := range commands {
+		if cmd == "" {
+			continue
+		}
+
 		log.Command(cmd)
 
 		rc, stdout, stderr, err = r.shell.Run(cmd)
