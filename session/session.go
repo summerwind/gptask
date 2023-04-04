@@ -25,16 +25,9 @@ func New(c *config.Config, systemPrompt string) *Session {
 	}
 }
 
-func (s *Session) AddUserMessage(prompt string) {
+func (s *Session) AddMessage(role, prompt string) {
 	s.Messages = append(s.Messages, openai.ChatCompletionMessage{
-		Role:    "user",
-		Content: prompt,
-	})
-}
-
-func (s *Session) AddAssistantMessage(prompt string) {
-	s.Messages = append(s.Messages, openai.ChatCompletionMessage{
-		Role:    "assistant",
+		Role:    role,
 		Content: prompt,
 	})
 }

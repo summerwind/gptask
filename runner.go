@@ -75,7 +75,7 @@ func (r *Runner) Run(task string) error {
 	}
 	defer r.shell.Stop()
 
-	r.session.AddUserMessage(task)
+	r.session.AddMessage("user", task)
 
 	for {
 		var (
@@ -130,8 +130,8 @@ func (r *Runner) Run(task string) error {
 
 		log.Stdout("")
 
-		r.session.AddAssistantMessage(encodeStep(s))
-		r.session.AddUserMessage(encodeStep(&Step{Observation: obs}))
+		r.session.AddMessage("assistant", encodeStep(s))
+		r.session.AddMessage("system", encodeStep(&Step{Observation: obs}))
 
 		numStep += 1
 		if numStep > r.config.MaxSteps {
